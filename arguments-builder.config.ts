@@ -214,7 +214,7 @@ export default defineConfig({
 			defaultValue: "WARN",
 			description: "选择脚本日志的输出等级，低于所选等级的日志将全部输出。",
 			options: [
-				{ key: "OFF", label: "关闭" },
+				{ key: "OFF", label: "🔴 关闭" },
 				{ key: "ERROR", label: "❌ 错误" },
 				{ key: "WARN", label: "⚠️ 警告" },
 				{ key: "INFO", label: "ℹ️ 信息" },
