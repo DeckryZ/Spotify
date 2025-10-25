@@ -18,38 +18,38 @@ http:
   mitm:
     - "api.spotify.com"
     - "spclient.wg.spotify.com"
-    - "gae?-spclient.spotify.com"
+    - "*-spclient.spotify.com"
   script:
     - match: ^https?:\/\/api\.spotify\.com\/v1\/tracks\?
       name: 🍿️ DualSubs.Spotify.response
       type: response
       require-body: true
 
-    - match: ^https?:\/\/(gae\d-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/(.+)\?(.*)format=json
+    - match: ^https?:\/\/(.+-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/(.+)\?(.*)format=json
       name: 🍿️ DualSubs.Spotify.request
       type: request
       require-body: true
-    - match: ^https?:\/\/(gae\d-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/\w+\?(.*)
+    - match: ^https?:\/\/(.+-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/\w+\?(.*)
       name: 🍿️ DualSubs.Spotify.request
       type: request
       require-body: true
       binary-mode: true
 
-    - match: ^https?:\/\/(gae\d-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/(.+)\?(.*)format=json(.*)subtype=Translate
+    - match: ^https?:\/\/(.+-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/(.+)\?(.*)format=json(.*)subtype=Translate
       name: 🍿️ DualSubs.Translate.Lyrics.response
       type: response
       require-body: true
-    - match: ^https?:\/\/(gae\d-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/\w+\?(.*)subtype=Translate
+    - match: ^https?:\/\/(.+-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/\w+\?(.*)subtype=Translate
       name: 🍿️ DualSubs.Translate.Lyrics.response
       type: response
       require-body: true
       binary-mode: true
 
-    - match: ^https?:\/\/(gae\d-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/(.+)\?(.*)format=json(.*)subtype=External
+    - match: ^https?:\/\/(.+-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/(.+)\?(.*)format=json(.*)subtype=External
       name: 🍿️ DualSubs.External.Lyrics.response
       type: response
       require-body: true
-    - match: ^https?:\/\/(gae\d-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/\w+\?(.*)subtype=External
+    - match: ^https?:\/\/(.+-spclient|spclient\.wg).spotify\.com(:443)?\/color-lyrics\/v2\/track\/\w+\?(.*)subtype=External
       name: 🍿️ DualSubs.External.Lyrics.response
       type: response
       require-body: true
