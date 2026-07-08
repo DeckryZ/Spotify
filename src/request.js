@@ -142,6 +142,7 @@ Console.info(`FORMAT: ${FORMAT}`);
 									track: body?.name,
 									album: body?.album?.name,
 									artist: body?.artist?.[0]?.name ?? body?.album?.artist?.[0]?.name,
+									duration: body?.duration, // ms，供外部歌词搜索按时长匹配正确版本
 								};
 								// 写入数据
 								Caches.Metadatas.Tracks.set(trackId, trackInfo);
