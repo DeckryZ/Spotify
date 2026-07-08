@@ -116,7 +116,8 @@ Console.info(`FORMAT: ${FORMAT}`);
 					if (Settings.Types.includes("External")) url.searchParams.set("subtype", "External");
 					detectStutus = Promise.resolve(null);
 				}
-				const detectTrack = fetch(_request);
+				// 元数据已缓存（含 track 名）则跳过重复拉取，省一次网络请求与磁盘写入
+				const detectTrack = Caches.Metadatas.Tracks.get(trackId)?.track ? Promise.resolve(null) : fetch(_request);
 				// 探测请求封顶 2.2s，超时用默认 subtype 直接放行，避免拖住歌词请求导致播放页偶发不显示歌词板块
 				await Promise.race([Promise.allSettled([detectStutus, detectTrack]), new Promise(r => setTimeout(r, 2200))]).then(results => {
 					if (!results) {
@@ -151,6 +152,7 @@ Console.info(`FORMAT: ${FORMAT}`);
 					switch (results[1].status) {
 						case "fulfilled": {
 							const response = results[1].value;
+							if (!response) break; // 元数据已缓存，本次跳过拉取
 							body = JSON.parse(response.body);
 							if (body?.name) {
 								const trackInfo = {
