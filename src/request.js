@@ -98,7 +98,13 @@ Console.info(`FORMAT: ${FORMAT}`);
 				const trackId = PATHs?.[3];
 				Console.debug(`trackId: ${trackId}`);
 				const _request = JSON.parse(JSON.stringify($request));
-				_request.url = `https://api.spotify.com/v1/tracks?ids=${trackId}`;
+				// api.spotify.com/v1/tracks 已对客户端 token 关闭（404），改用 spclient metadata 端点（JSON 格式），需将 base62 id 转 hex gid
+				const hexGid = (id => {
+					let n = 0n;
+					for (const c of id) n = 62n * n + BigInt("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".indexOf(c));
+					return n.toString(16).padStart(32, "0");
+				})(trackId);
+				_request.url = `https://spclient.wg.spotify.com/metadata/4/track/${hexGid}?market=from_token`;
 				if (_request?.headers?.Accept) _request.headers.Accept = "application/json";
 				if (_request?.headers?.accept) _request.headers.accept = "application/json";
 				//Console.debug(`_request: ${JSON.stringify(_request)}`);
@@ -130,21 +136,20 @@ Console.info(`FORMAT: ${FORMAT}`);
 						case "fulfilled": {
 							const response = results[1].value;
 							body = JSON.parse(response.body);
-							body?.tracks?.forEach?.(track => {
-								const trackId = track?.id;
+							if (body?.name) {
 								const trackInfo = {
-									id: track?.id,
-									track: track?.name,
-									album: track?.album?.name,
-									artist: track?.artists?.[0]?.name,
+									id: trackId,
+									track: body?.name,
+									album: body?.album?.name,
+									artist: body?.artist?.[0]?.name ?? body?.album?.artist?.[0]?.name,
 								};
 								// 写入数据
 								Caches.Metadatas.Tracks.set(trackId, trackInfo);
-							});
-							// 格式化缓存
-							Caches.Metadatas.Tracks = setCache(Caches.Metadatas.Tracks, Settings.CacheSize);
-							// 写入持久化储存
-							Storage.setItem(`@DualSubs.${"Spotify"}.Caches.Metadatas.Tracks`, Caches.Metadatas.Tracks);
+								// 格式化缓存
+								Caches.Metadatas.Tracks = setCache(Caches.Metadatas.Tracks, Settings.CacheSize);
+								// 写入持久化储存
+								Storage.setItem(`@DualSubs.${"Spotify"}.Caches.Metadatas.Tracks`, Caches.Metadatas.Tracks);
+							} else Console.debug(`metadata miss: ${response?.statusCode ?? response?.status} ${String(response?.body).slice(0, 100)}`);
 							break;
 						}
 						case "rejected":
