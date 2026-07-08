@@ -16,6 +16,12 @@ Vendor = select,"Google","Microsoft",tag=[翻译器] 服务商API,desc=请选择
 LrcVendor = select,"NeteaseMusic","QQMusic","NeteaseMusicNodeJS",tag=[歌词] 服务商API,desc=请选择外部源所使用的服务商API。
 LogLevel = select,"WARN","OFF","ERROR","INFO","DEBUG","ALL",tag=[调试] 日志等级,desc=选择脚本日志的输出等级，低于所选等级的日志将全部输出。
 
+[Rewrite]
+# 移除正在播放页「探索 xxx」短视频板块（抓包确认: watch-feed-entrypoints/v1/discovery-from-seed）
+^https?:\/\/(.+-spclient|spclient\.wg)\.spotify\.com(:443)?\/watch-feed reject
+# 移除正在播放页「制作人」板块（待确认端点，无效请抓包搜 credits）
+^https?:\/\/(.+-spclient|spclient\.wg)\.spotify\.com(:443)?\/track-credits-view\/ reject
+
 [Script]
 http-response ^https?:\/\/api\.spotify\.com\/v1\/tracks\? requires-body=1, script-path=https://github.com/DualSubs/Spotify/releases/download/v1.9.12/response.bundle.js, tag=🍿️ DualSubs.Spotify.Tracks.response.json, argument=[{Types},{Languages[0]},{Languages[1]},{Vendor},{LrcVendor},{LogLevel}]
 
