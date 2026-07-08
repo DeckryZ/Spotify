@@ -110,7 +110,16 @@ Console.info(`FORMAT: ${FORMAT}`);
 				//Console.debug(`_request: ${JSON.stringify(_request)}`);
 				const detectStutus = fetch($request);
 				const detectTrack = fetch(_request);
-				await Promise.allSettled([detectStutus, detectTrack]).then(results => {
+				// 探测请求封顶 2.2s，超时用默认 subtype 直接放行，避免拖住歌词请求导致播放页偶发不显示歌词板块
+				await Promise.race([Promise.allSettled([detectStutus, detectTrack]), new Promise(r => setTimeout(r, 2200))]).then(results => {
+					if (!results) {
+						if (!url.searchParams.has("subtype")) {
+							if (Settings.Types.includes("Translate")) url.searchParams.set("subtype", "Translate");
+							else if (Settings.Types.includes("External")) url.searchParams.set("subtype", "External");
+						}
+						Console.info("prefetch timeout → default subtype");
+						return;
+					}
 					switch (results[0].status) {
 						case "fulfilled": {
 							const response = results[0].value;
