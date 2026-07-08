@@ -108,7 +108,14 @@ Console.info(`FORMAT: ${FORMAT}`);
 				if (_request?.headers?.Accept) _request.headers.Accept = "application/json";
 				if (_request?.headers?.accept) _request.headers.accept = "application/json";
 				//Console.debug(`_request: ${JSON.stringify(_request)}`);
-				const detectStutus = fetch($request);
+				// 只有 Translate 需要探测官方歌词 200/404；若未启用 Translate（如仅 External），跳过这次完整歌词拉取以减少延迟，直接定 subtype
+				let detectStutus;
+				if (Settings.Types.includes("Translate")) {
+					detectStutus = fetch($request);
+				} else {
+					if (Settings.Types.includes("External")) url.searchParams.set("subtype", "External");
+					detectStutus = Promise.resolve(null);
+				}
 				const detectTrack = fetch(_request);
 				// 探测请求封顶 2.2s，超时用默认 subtype 直接放行，避免拖住歌词请求导致播放页偶发不显示歌词板块
 				await Promise.race([Promise.allSettled([detectStutus, detectTrack]), new Promise(r => setTimeout(r, 2200))]).then(results => {
