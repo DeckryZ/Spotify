@@ -109,9 +109,12 @@ Console.info(`FORMAT: ${FORMAT}`);
 				if (_request?.headers?.accept) _request.headers.accept = "application/json";
 				//Console.debug(`_request: ${JSON.stringify(_request)}`);
 				// 只有 Translate 需要探测官方歌词 200/404；若未启用 Translate（如仅 External），跳过这次完整歌词拉取以减少延迟，直接定 subtype
+				// 探测结果按 trackId 持久缓存（200/404 极少变化）——重复播放同一首歌零探测请求，省流量省电
+				const LyricsStatus = (() => { try { return Storage.getItem("@DualSubs.Spotify.Caches.LyricsStatus") || {}; } catch (e) { return {}; } })();
+				const cachedStatus = +LyricsStatus[trackId] || 0;
 				let detectStutus;
 				if (Settings.Types.includes("Translate")) {
-					detectStutus = fetch($request);
+					detectStutus = cachedStatus === 200 || cachedStatus === 404 ? Promise.resolve({ statusCode: cachedStatus }) : fetch($request);
 				} else {
 					if (Settings.Types.includes("External")) url.searchParams.set("subtype", "External");
 					detectStutus = Promise.resolve(null);
@@ -131,7 +134,15 @@ Console.info(`FORMAT: ${FORMAT}`);
 					switch (results[0].status) {
 						case "fulfilled": {
 							const response = results[0].value;
-							switch (response?.statusCode ?? response?.status) {
+							const statusCode = response?.statusCode ?? response?.status;
+							// 探测到确定结果（200/404）且与缓存不同时落盘；上限 300 条，超出淘汰最旧的
+							if ((statusCode === 200 || statusCode === 404) && statusCode !== cachedStatus) {
+								LyricsStatus[trackId] = statusCode;
+								const keys = Object.keys(LyricsStatus);
+								if (keys.length > 300) for (const k of keys.slice(0, keys.length - 200)) delete LyricsStatus[k];
+								Storage.setItem("@DualSubs.Spotify.Caches.LyricsStatus", LyricsStatus);
+							}
+							switch (statusCode) {
 								case 200:
 									if (Settings.Types.includes("Translate")) url.searchParams.set("subtype", "Translate");
 									else if (Settings.Types.includes("External")) url.searchParams.set("subtype", "External");
