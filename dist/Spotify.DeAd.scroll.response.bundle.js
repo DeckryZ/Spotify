@@ -1,11 +1,12 @@
 // Spotify 播放页精简 /scrollsita/v1/scroll 的 section，双模式：
 //   有歌词锚点 section（仅引用 track、无 artist、非 explore 族）→ 只保留它（播放页只剩歌词）
-//   无歌词锚点（该曲无歌词，Spotify 不下发歌词 section）→ 保留「关于艺人」（artist 数最少的非 explore section），其余删
-// 删除对象：相似艺人（多 artist）、探索（explore 族 0JQ5DABRtFWApcy 前缀）等。字节级操作，解析失败或无可删则原样放行。DeckryZ fork 自制。
+//   无歌词锚点（该曲无歌词，Spotify 不下发歌词 section）→ 只保留「关于艺人」（模板 id 0JQ5DB6s3cssW5Bo6cGq1L 精准匹配；缺失时退回 artist 数最少的非 explore section）
+// 删除对象：制作人（Gq1O）、相似艺人（多 artist）、探索（explore 族 0JQ5DABRtFWApcy 前缀）等。字节级操作，解析失败或无可删则原样放行。DeckryZ fork 自制。
 (() => {
 	"use strict";
 	const ARTIST = [0x73, 0x70, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x3a, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x3a]; // "spotify:artist:"
 	const EXPLORE = [0x30, 0x4a, 0x51, 0x35, 0x44, 0x41, 0x42, 0x52, 0x74, 0x46, 0x57, 0x41, 0x70, 0x63, 0x79]; // "0JQ5DABRtFWApcy"
+	const ABOUT = [0x30, 0x4a, 0x51, 0x35, 0x44, 0x42, 0x36, 0x73, 0x33, 0x63, 0x73, 0x73, 0x57, 0x35, 0x42, 0x6f, 0x36, 0x63, 0x47, 0x71, 0x31, 0x4c]; // "0JQ5DB6s3cssW5Bo6cGq1L" 关于艺人模板 id
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
 		do { x = b[i++]; n += (x & 0x7f) * 2 ** s; s += 7; } while (x & 0x80);
@@ -57,7 +58,7 @@
 				const nonSecs = [];
 				for (const s of inner) {
 					if (s.fn === 1 && s.wt === 2) {
-						secs.push({ s, artists: count(body, s.st, s.en, ARTIST), explore: count(body, s.st, s.en, EXPLORE) > 0 });
+						secs.push({ s, artists: count(body, s.st, s.en, ARTIST), explore: count(body, s.st, s.en, EXPLORE) > 0, about: count(body, s.st, s.en, ABOUT) > 0 });
 					} else nonSecs.push(s);
 				}
 				// 选出要保留的 section
@@ -66,8 +67,12 @@
 				if (lyrics.length) {
 					keepSet = new Set(lyrics.map(x => x.s));
 				} else {
-					const artistSecs = secs.filter(x => !x.explore && x.artists > 0).sort((a, b) => a.artists - b.artists);
-					keepSet = new Set(artistSecs.length ? [artistSecs[0].s] : (secs[0] ? [secs[0].s] : []));
+					const about = secs.filter(x => x.about);
+					if (about.length) keepSet = new Set(about.map(x => x.s));
+					else {
+						const artistSecs = secs.filter(x => !x.explore && x.artists > 0).sort((a, b) => a.artists - b.artists);
+						keepSet = new Set(artistSecs.length ? [artistSecs[0].s] : (secs[0] ? [secs[0].s] : []));
+					}
 				}
 				const kept = [];
 				for (const s of inner) {
