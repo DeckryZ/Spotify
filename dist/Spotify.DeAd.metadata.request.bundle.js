@@ -1,13 +1,14 @@
 // Spotify 艺人页去短视频入口标识（请求侧）
 // extended-metadata 是 POST，Loon http-response 脚本对 POST 处理不同 → 改在请求侧动手：
-// 请求体用数字 kind id 声明要拉哪些 extension，kind 114 =
-// spotify.watchfeedextensions...EntityExplorerEntrypointResponse（艺人页短视频/探索入口）。
-// 从每个 query 的 repeated extension 里删掉 kind==114 的声明项，服务器就不再返回该 extension。
+// 请求体用数字 kind id 声明要拉哪些 extension：
+//   kind 114 = watchfeedextensions...EntityExplorerEntrypointResponse（artist/playlist 短视频/探索入口）
+//   kind 226 = ...WatchFeedSeedItemTrait（watchfeed 种子项，playlist 请求）
+// 从每个 query 的 repeated extension 里删掉这些 kind 的声明项，服务器就不再返回它们。
 // 结构：top = f1(context) + repeated f2(query){ f1:uri, repeated f2:ext{ f1:varint(kind)[, f2:etag] } }。
 // 删 ext 后需重算所在 query 的长度前缀。未命中则原样放行。DeckryZ fork 自制。
 (() => {
 	"use strict";
-	const KIND = 114;
+	const KINDS = new Set([114, 226]);
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
 		do { x = b[i++]; n += (x & 0x7f) * 2 ** s; s += 7; } while (x & 0x80);
@@ -57,7 +58,7 @@
 				let localRemoved = 0;
 				const kept = [];
 				for (const s of subs) {
-					if (s.fn === 2 && s.wt === 2 && kindOf(body, s.st, s.en) === KIND) { localRemoved++; removed++; continue; }
+					if (s.fn === 2 && s.wt === 2 && KINDS.has(kindOf(body, s.st, s.en))) { localRemoved++; removed++; continue; }
 					kept.push(body.subarray(s.st, s.en));
 				}
 				if (!localRemoved) { outParts.push(body.subarray(f.st, f.en)); continue; }
