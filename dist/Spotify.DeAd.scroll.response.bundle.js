@@ -1,7 +1,7 @@
-// Spotify 播放页只留歌词：从 /scrollsita/v1/scroll 删除「关于艺人/相似艺人/制作人/探索」等 section，保留歌词锚点 section
-// 规则：删除引用了 spotify:artist:（关于艺人/相似艺人/制作人）或属 explore 族（section id 前缀 0JQ5DABRtFWApcy，短视频）的 section；
-// 仅引用当前 track、无艺人的 section（歌词模块锚点）保留，以维持播放页滚动布局不塌。
-// 字节级操作，无需完整 schema；解析失败或无可删项则原样放行。DeckryZ fork 自制。
+// Spotify 播放页精简 /scrollsita/v1/scroll 的 section，双模式：
+//   有歌词锚点 section（仅引用 track、无 artist、非 explore 族）→ 只保留它（播放页只剩歌词）
+//   无歌词锚点（该曲无歌词，Spotify 不下发歌词 section）→ 保留「关于艺人」（artist 数最少的非 explore section），其余删
+// 删除对象：相似艺人（多 artist）、探索（explore 族 0JQ5DABRtFWApcy 前缀）等。字节级操作，解析失败或无可删则原样放行。DeckryZ fork 自制。
 (() => {
 	"use strict";
 	const ARTIST = [0x73, 0x70, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x3a, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x3a]; // "spotify:artist:"
@@ -17,13 +17,14 @@
 		o.push(n & 0x7f);
 		return o;
 	};
-	const contains = (b, s, e, pat) => {
+	const count = (b, s, e, pat) => {
+		let c = 0;
 		for (let i = s; i <= e - pat.length; i++) {
 			let k = 0;
 			while (k < pat.length && b[i + k] === pat[k]) k++;
-			if (k === pat.length) return true;
+			if (k === pat.length) { c++; i += pat.length - 1; }
 		}
-		return false;
+		return c;
 	};
 	const walk = (b, from, to) => {
 		let i = from; const out = [];
@@ -51,9 +52,27 @@
 				let p = f.st; let tag; [tag, p] = rv(body, p); let ln; [ln, p] = rv(body, p);
 				const inner = walk(body, p, f.en);
 				if (!inner) { parts.push(body.subarray(f.st, f.en)); continue; }
+				// 归类每个 section
+				const secs = [];
+				const nonSecs = [];
+				for (const s of inner) {
+					if (s.fn === 1 && s.wt === 2) {
+						secs.push({ s, artists: count(body, s.st, s.en, ARTIST), explore: count(body, s.st, s.en, EXPLORE) > 0 });
+					} else nonSecs.push(s);
+				}
+				// 选出要保留的 section
+				const lyrics = secs.filter(x => !x.explore && x.artists === 0);
+				let keepSet;
+				if (lyrics.length) {
+					keepSet = new Set(lyrics.map(x => x.s));
+				} else {
+					const artistSecs = secs.filter(x => !x.explore && x.artists > 0).sort((a, b) => a.artists - b.artists);
+					keepSet = new Set(artistSecs.length ? [artistSecs[0].s] : (secs[0] ? [secs[0].s] : []));
+				}
 				const kept = [];
 				for (const s of inner) {
-					if (s.fn === 1 && s.wt === 2 && (contains(body, s.st, s.en, ARTIST) || contains(body, s.st, s.en, EXPLORE))) { removed++; continue; }
+					const isSec = s.fn === 1 && s.wt === 2;
+					if (isSec && !keepSet.has(s)) { removed++; continue; }
 					kept.push(body.subarray(s.st, s.en));
 				}
 				if (removed === 0) { parts.push(body.subarray(f.st, f.en)); continue; }
