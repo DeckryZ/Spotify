@@ -1,9 +1,14 @@
-// Spotify 搜索/浏览页去「发现新内容」短视频排
-// 拦截 /browsita/v1/browse（protobuf），删除含 watch-feed 的 section（视频卡），保留浏览格子等其余 section。
+// Spotify 搜索/浏览页去「发现新内容」短视频排 +「你可能会喜欢」赞助推广排
+// 拦截 /browsita/v1/browse（protobuf），删除命中任一特征的 body 级 section，保留浏览格子/分类卡等其余 section。
+//   watch-feed = 发现新内容短视频排
+//   0JQ5DApMPy0jM78k6Ozvy5 = mobile-promotion-section（你可能会喜欢/Sponsored recommendation 赞助推广排）的 section 模板 id
 // 字节级操作，无需完整 schema；未命中则原样放行。DeckryZ fork 自制。
 (() => {
 	"use strict";
-	const MARK = [0x77, 0x61, 0x74, 0x63, 0x68, 0x2d, 0x66, 0x65, 0x65, 0x64]; // "watch-feed"
+	const MARKS = [
+		[0x77, 0x61, 0x74, 0x63, 0x68, 0x2d, 0x66, 0x65, 0x65, 0x64], // "watch-feed"
+		[0x30, 0x4a, 0x51, 0x35, 0x44, 0x41, 0x70, 0x4d, 0x50, 0x79, 0x30, 0x6a, 0x4d, 0x37, 0x38, 0x6b, 0x36, 0x4f, 0x7a, 0x76, 0x79, 0x35], // "0JQ5DApMPy0jM78k6Ozvy5"
+	];
 	// 读 varint
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
@@ -17,12 +22,14 @@
 		o.push(n & 0x7f);
 		return o;
 	};
-	// 子串包含（在 b 的 [s,e) 内找 MARK）
+	// 子串包含（在 b 的 [s,e) 内找任一 MARK）
 	const has = (b, s, e) => {
-		for (let i = s; i <= e - MARK.length; i++) {
-			let k = 0;
-			while (k < MARK.length && b[i + k] === MARK[k]) k++;
-			if (k === MARK.length) return true;
+		for (const MARK of MARKS) {
+			for (let i = s; i <= e - MARK.length; i++) {
+				let k = 0;
+				while (k < MARK.length && b[i + k] === MARK[k]) k++;
+				if (k === MARK.length) return true;
+			}
 		}
 		return false;
 	};
