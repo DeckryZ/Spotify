@@ -41,6 +41,13 @@
 		}
 		return out;
 	};
+	// 禁止客户端缓存 scrollsita：默认 cache-control: private, max-age=600 会让客户端 10 分钟内
+	// 直接用本地旧缓存渲染播放页——若旧缓存是插件生效前的原始数据，会残留制作人/相似艺人排。
+	// 改 no-store 后客户端每次进播放页都重新拉取，必经本脚本处理。
+	if ($response.headers) {
+		for (const k of Object.keys($response.headers)) if (/^cache-control$/i.test(k)) delete $response.headers[k];
+		$response.headers["Cache-Control"] = "no-store";
+	}
 	try {
 		const body = $response.body;
 		if (!body || !body.length) return $done($response);
