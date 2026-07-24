@@ -43,13 +43,9 @@
 		}
 		return out;
 	};
-	// 禁止客户端缓存 scrollsita：默认 cache-control: private, max-age=600 会让客户端 10 分钟内
-	// 直接用本地旧缓存渲染播放页——若旧缓存是插件生效前的原始数据，会残留制作人/相似艺人排。
-	// 改 no-store 后客户端每次进播放页都重新拉取，必经本脚本处理。
-	if ($response.headers) {
-		for (const k of Object.keys($response.headers)) if (/^cache-control$/i.test(k)) delete $response.headers[k];
-		$response.headers["Cache-Control"] = "no-store";
-	}
+	// 不再强制 no-store：制作人现改由 metadata(kind 186) 请求侧删除、不再依赖 scrollsita section，
+	// 残留隐患已消除。保留服务器原 cache-control(max-age=600)，让客户端缓存「已处理」的 scrollsita
+	// (仅 Gq21 歌词锚点)，第一次进播放页即可秒显歌词，避免每次重拉导致的首次空白/渲染竞态。
 	try {
 		const body = $response.body;
 		if (!body || !body.length) return $done($response);
