@@ -1,11 +1,13 @@
-// Spotify 播放页精简 /scrollsita/v1/scroll 的 section，双模式：
-//   有歌词锚点 section（仅引用 track、无 artist、非 explore 族）→ 只保留它（播放页只剩歌词）
-//   无歌词锚点（该曲无歌词，Spotify 不下发歌词 section）→ 只保留「关于艺人」（模板 id 0JQ5DB6s3cssW5Bo6cGq1L 精准匹配；缺失时退回 artist 数最少的非 explore section）
-// 删除对象：制作人（Gq1O）、相似艺人（多 artist）、探索（explore 族 0JQ5DABRtFWApcy 前缀）等。字节级操作，解析失败或无可删则原样放行。DeckryZ fork 自制。
+// Spotify 播放页精简 /scrollsita/v1/scroll 的 section，双模式（按固定模板 id 精准匹配，不用启发式）：
+//   有歌词模块（模板 id 0JQ5DB6s3cssW5Bo6cGq21）→ 只保留它（播放页只剩歌词）
+//   无歌词（该曲无歌词，不下发 Gq21）→ 只保留「关于艺人」（模板 id ...Gq1L；缺失时退回 artist 数最少的非 explore section）
+// 删除对象：制作人（Gq1O）、相似艺人、推荐歌排（Gq2qd 等无 artist 但非歌词的新排）、探索（explore 族 0JQ5DABRtFWApcy 前缀）等。
+// 早期版本用「无 artist」启发式判歌词，会误留新出现的推荐/内容排（Gq2qd/Gq1N），改为精准 id 匹配。字节级操作，解析失败或无可删则原样放行。DeckryZ fork 自制。
 (() => {
 	"use strict";
 	const ARTIST = [0x73, 0x70, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x3a, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x3a]; // "spotify:artist:"
 	const EXPLORE = [0x30, 0x4a, 0x51, 0x35, 0x44, 0x41, 0x42, 0x52, 0x74, 0x46, 0x57, 0x41, 0x70, 0x63, 0x79]; // "0JQ5DABRtFWApcy"
+	const LYRIC = [0x30, 0x4a, 0x51, 0x35, 0x44, 0x42, 0x36, 0x73, 0x33, 0x63, 0x73, 0x73, 0x57, 0x35, 0x42, 0x6f, 0x36, 0x63, 0x47, 0x71, 0x32, 0x31]; // "0JQ5DB6s3cssW5Bo6cGq21" 歌词模块模板 id
 	const ABOUT = [0x30, 0x4a, 0x51, 0x35, 0x44, 0x42, 0x36, 0x73, 0x33, 0x63, 0x73, 0x73, 0x57, 0x35, 0x42, 0x6f, 0x36, 0x63, 0x47, 0x71, 0x31, 0x4c]; // "0JQ5DB6s3cssW5Bo6cGq1L" 关于艺人模板 id
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
@@ -65,11 +67,11 @@
 				const nonSecs = [];
 				for (const s of inner) {
 					if (s.fn === 1 && s.wt === 2) {
-						secs.push({ s, artists: count(body, s.st, s.en, ARTIST), explore: count(body, s.st, s.en, EXPLORE) > 0, about: count(body, s.st, s.en, ABOUT) > 0 });
+						secs.push({ s, artists: count(body, s.st, s.en, ARTIST), explore: count(body, s.st, s.en, EXPLORE) > 0, about: count(body, s.st, s.en, ABOUT) > 0, lyric: count(body, s.st, s.en, LYRIC) > 0 });
 					} else nonSecs.push(s);
 				}
-				// 选出要保留的 section
-				const lyrics = secs.filter(x => !x.explore && x.artists === 0);
+				// 选出要保留的 section：歌词模块按精准 id 匹配（不再用「无 artist」启发式，避免误留推荐/内容排）
+				const lyrics = secs.filter(x => x.lyric);
 				let keepSet;
 				if (lyrics.length) {
 					keepSet = new Set(lyrics.map(x => x.s));
