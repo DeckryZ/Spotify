@@ -3,12 +3,13 @@
 // 请求体用数字 kind id 声明要拉哪些 extension：
 //   kind 114 = watchfeedextensions...EntityExplorerEntrypointResponse（artist/playlist 短视频/探索入口）
 //   kind 226 = ...WatchFeedSeedItemTrait（watchfeed 种子项，playlist 请求）
+//   kind 186 = CreditsTrait（播放页「制作人」卡；每首歌单独请求，不走 scrollsita section，删 section 无效，必须从这里删）
 // 从每个 query 的 repeated extension 里删掉这些 kind 的声明项，服务器就不再返回它们。
 // 结构：top = f1(context) + repeated f2(query){ f1:uri, repeated f2:ext{ f1:varint(kind)[, f2:etag] } }。
 // 删 ext 后需重算所在 query 的长度前缀。未命中则原样放行。DeckryZ fork 自制。
 (() => {
 	"use strict";
-	const KINDS = new Set([114, 226]);
+	const KINDS = new Set([114, 186, 226]);
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
 		do { x = b[i++]; n += (x & 0x7f) * 2 ** s; s += 7; } while (x & 0x80);

@@ -70,19 +70,10 @@
 						secs.push({ s, artists: count(body, s.st, s.en, ARTIST), explore: count(body, s.st, s.en, EXPLORE) > 0, about: count(body, s.st, s.en, ABOUT) > 0, lyric: count(body, s.st, s.en, LYRIC) > 0 });
 					} else nonSecs.push(s);
 				}
-				// 选出要保留的 section：歌词模块按精准 id 匹配（不再用「无 artist」启发式，避免误留推荐/内容排）
+				// 选出要保留的 section：只保留歌词模块（精准 id 匹配 Gq21）。
+				// 无歌词的歌不保留任何 section（关于艺人 Gq1L 等一律删），播放页只剩封面。
 				const lyrics = secs.filter(x => x.lyric);
-				let keepSet;
-				if (lyrics.length) {
-					keepSet = new Set(lyrics.map(x => x.s));
-				} else {
-					const about = secs.filter(x => x.about);
-					if (about.length) keepSet = new Set(about.map(x => x.s));
-					else {
-						const artistSecs = secs.filter(x => !x.explore && x.artists > 0).sort((a, b) => a.artists - b.artists);
-						keepSet = new Set(artistSecs.length ? [artistSecs[0].s] : (secs[0] ? [secs[0].s] : []));
-					}
-				}
+				const keepSet = new Set(lyrics.map(x => x.s));
 				const kept = [];
 				for (const s of inner) {
 					const isSec = s.fn === 1 && s.wt === 2;
