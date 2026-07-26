@@ -21,6 +21,11 @@
 (() => {
 	"use strict";
 	const KINDS = new Set([99, 114, 136, 186, 226, 249]);
+	// 本地短路开关：删完 kind 后若整个请求已无任何 extension 声明，服务器必定只回 200+空体
+	//（抓包 s898 实证 190/190）。此时直接本地合成同样的空响应，省掉一次 HTTPS 往返与 TLS 解密，
+	// 每 3 分钟会话约省 200 次射频往返。若怀疑它引起异常，改成 false 即可完全回退。
+	const SHORT_CIRCUIT = true;
+	const CL = /^content-length$/i; // hoist：避免在 header 循环里反复新建 RegExp
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
 		do { x = b[i++]; n += (x & 0x7f) * 2 ** s; s += 7; } while (x & 0x80);
@@ -56,23 +61,46 @@
 	};
 	try {
 		const body = $request.body;
-		if (!body || !body.length) return $done($request);
+		// 空跑一律 $done({})：告诉 Loon「没改」，让它转发原始（仍为 gzip 的）请求体。
+		// 若返回 $request，Loon 会把解压后的明文发上行 —— 抓包实测上行从 108KB 涨到 265KB。
+		if (!body || !body.length) return $done({});
+		// ── 预筛：单遍跳跃扫描找 `08 <目标kind varint>`，未命中立即放行。
+		// 实测 484 次调用里 46% 走这条，省掉完整 protobuf 解析。零假阴性：多字节 varint 一律保守判命中。
+		let maybe = false;
+		for (let i = body.indexOf(8); i >= 0; i = body.indexOf(8, i + 1)) {
+			const x = body[i + 1];
+			if (x === undefined) break;
+			let k;
+			if (x < 0x80) k = x;
+			else {
+				const y = body[i + 2];
+				if (y === undefined || y >= 0x80) { maybe = true; break; } // 3 字节以上：保守命中
+				k = (x & 0x7f) | (y << 7);
+			}
+			if (KINDS.has(k)) { maybe = true; break; }
+		}
+		if (!maybe) return $done({});
 		const top = walk(body, 0, body.length);
-		if (!top) return $done($request);
-		let removed = 0;
+		if (!top) return $done({});
+		let removed = 0, nQuery = 0, keptExt = 0;
 		const outParts = [];
 		for (const f of top) {
 			// query = 顶层 f2 消息（含 uri + 多个 ext）
 			if (f.fn === 2 && f.wt === 2) {
+				nQuery++;
 				let p = f.st; let tag; [tag, p] = rv(body, p); let ln; [ln, p] = rv(body, p);
 				const subs = walk(body, p, f.en);
-				if (!subs) { outParts.push(body.subarray(f.st, f.en)); continue; }
-				let localRemoved = 0;
+				if (!subs) { outParts.push(body.subarray(f.st, f.en)); keptExt++; continue; } // 解析不了就保守计数，禁止短路
+				let localRemoved = 0, qExt = 0;
 				const kept = [];
 				for (const s of subs) {
-					if (s.fn === 2 && s.wt === 2 && KINDS.has(kindOf(body, s.st, s.en))) { localRemoved++; removed++; continue; }
+					if (s.fn === 2 && s.wt === 2) {
+						qExt++;
+						if (KINDS.has(kindOf(body, s.st, s.en))) { localRemoved++; removed++; continue; }
+					}
 					kept.push(body.subarray(s.st, s.en));
 				}
+				keptExt += qExt - localRemoved;
 				if (!localRemoved) { outParts.push(body.subarray(f.st, f.en)); continue; }
 				let len = 0; for (const k of kept) len += k.length;
 				outParts.push(new Uint8Array([(2 << 3) | 2, ...wv(len)]));
@@ -81,12 +109,15 @@
 				outParts.push(body.subarray(f.st, f.en));
 			}
 		}
-		if (removed === 0) return $done($request);
+		if (removed === 0) return $done({});
+		// 删空了：请求已不含任何 extension 声明 → 本地合成服务器必然返回的 200+空体，省一次往返
+		if (SHORT_CIRCUIT && nQuery > 0 && keptExt === 0)
+			return $done({ response: { status: 200, headers: { "Content-Type": "application/protobuf" }, body: new Uint8Array(0) } });
 		let total = 0; for (const p of outParts) total += p.length;
 		const res = new Uint8Array(total);
 		let off = 0; for (const p of outParts) { res.set(p, off); off += p.length; }
 		// body 变短，删 Content-Length 让 Loon 按新长度重算，避免服务器按旧长度截断
-		if ($request.headers) for (const k of Object.keys($request.headers)) if (/^content-length$/i.test(k)) delete $request.headers[k];
+		if ($request.headers) for (const k of Object.keys($request.headers)) if (CL.test(k)) delete $request.headers[k];
 		$request.body = res;
 	} catch (e) {}
 	$done($request);
