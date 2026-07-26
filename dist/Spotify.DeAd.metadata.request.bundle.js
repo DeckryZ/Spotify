@@ -110,14 +110,17 @@
 			}
 		}
 		if (removed === 0) return $done({});
-		// 删空了：请求已不含任何 extension 声明 → 本地合成服务器必然返回的 200+空体，省一次往返
-		if (SHORT_CIRCUIT && nQuery > 0 && keptExt === 0)
-			return $done({ response: { status: 200, headers: { "Content-Type": "application/protobuf" }, body: new Uint8Array(0) } });
 		let total = 0; for (const p of outParts) total += p.length;
 		const res = new Uint8Array(total);
 		let off = 0; for (const p of outParts) { res.set(p, off); off += p.length; }
 		// body 变短，删 Content-Length 让 Loon 按新长度重算，避免服务器按旧长度截断
 		if ($request.headers) for (const k of Object.keys($request.headers)) if (CL.test(k)) delete $request.headers[k];
+		// 删空了：请求已不含任何 extension 声明 → 本地合成服务器必然返回的 200+空体，省一次往返。
+		// ⚠️ 同一个对象里同时带上改写后的 headers/body：万一 Loon 不认 response 键，它会退化成
+		// 「转发已删干净的请求」，而不是转发原始请求 —— 后者会让 kind 186 制作人卡、
+		// kind 114 艺人页短视频入口静默复活且不报错。两条路径的可观察结果都正确。
+		if (SHORT_CIRCUIT && nQuery > 0 && keptExt === 0)
+			return $done({ response: { status: 200, headers: { "Content-Type": "application/protobuf" }, body: new Uint8Array(0) }, headers: $request.headers, body: res });
 		$request.body = res;
 	} catch (e) {}
 	$done($request);
