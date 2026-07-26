@@ -104,7 +104,9 @@ Console.info(`FORMAT: ${FORMAT}`);
 					for (const c of id) n = 62n * n + BigInt("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".indexOf(c));
 					return n.toString(16).padStart(32, "0");
 				})(trackId);
-				_request.url = `https://spclient.wg.spotify.com/metadata/4/track/${hexGid}?market=from_token`;
+				// 打与本次请求同一主机（如 guc3-spclient），App 已有热连接，省掉冷 DNS/TCP/TLS/MITM 签证书；
+				// 实测冷主机 spclient.wg 要 1.2-2.2s 才回来，把歌词请求整段堵在关键路径上
+				_request.url = `https://${url.hostname}/metadata/4/track/${hexGid}?market=from_token`;
 				if (_request?.headers?.Accept) _request.headers.Accept = "application/json";
 				if (_request?.headers?.accept) _request.headers.accept = "application/json";
 				//Console.debug(`_request: ${JSON.stringify(_request)}`);
@@ -120,7 +122,16 @@ Console.info(`FORMAT: ${FORMAT}`);
 					detectStutus = Promise.resolve(null);
 				}
 				// 元数据已缓存（含 track 名）则跳过重复拉取，省一次网络请求与磁盘写入
-				const detectTrack = Caches.Metadatas.Tracks.get(trackId)?.track ? Promise.resolve(null) : fetch(_request);
+				// 热主机失败则回退全局主机，保证拿得到 track 名（否则外部歌词搜索关键词会变成 "undefined undefined"）
+				const detectTrack = Caches.Metadatas.Tracks.get(trackId)?.track
+					? Promise.resolve(null)
+					: (async () => {
+							const warm = await fetch(_request).catch(() => null);
+							if (warm && String(warm.body ?? "").includes('"name"')) return warm;
+							const fallback = JSON.parse(JSON.stringify(_request));
+							fallback.url = `https://spclient.wg.spotify.com/metadata/4/track/${hexGid}?market=from_token`;
+							return await fetch(fallback).catch(() => null);
+						})();
 				// 探测请求封顶 2.2s，超时用默认 subtype 直接放行，避免拖住歌词请求导致播放页偶发不显示歌词板块
 				await Promise.race([Promise.allSettled([detectStutus, detectTrack]), new Promise(r => setTimeout(r, 2200))]).then(results => {
 					if (!results) {
