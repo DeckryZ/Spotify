@@ -7,8 +7,8 @@
 	"use strict";
 	const ARTIST = [0x73, 0x70, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x3a, 0x61, 0x72, 0x74, 0x69, 0x73, 0x74, 0x3a]; // "spotify:artist:"
 	const EXPLORE = [0x30, 0x4a, 0x51, 0x35, 0x44, 0x41, 0x42, 0x52, 0x74, 0x46, 0x57, 0x41, 0x70, 0x63, 0x79]; // "0JQ5DABRtFWApcy"
-	const LYRIC = [0x30, 0x4a, 0x51, 0x35, 0x44, 0x42, 0x36, 0x73, 0x33, 0x63, 0x73, 0x73, 0x57, 0x35, 0x42, 0x6f, 0x36, 0x63, 0x47, 0x71, 0x32, 0x31]; // "0JQ5DB6s3cssW5Bo6cGq21" 歌词模块模板 id
-	const ABOUT = [0x30, 0x4a, 0x51, 0x35, 0x44, 0x42, 0x36, 0x73, 0x33, 0x63, 0x73, 0x73, 0x57, 0x35, 0x42, 0x6f, 0x36, 0x63, 0x47, 0x71, 0x31, 0x4c]; // "0JQ5DB6s3cssW5Bo6cGq1L" 关于艺人模板 id
+	const LYRIC = [0x73, 0x70, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x3a, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x3a, 0x30, 0x4a, 0x51, 0x35, 0x44, 0x42, 0x36, 0x73, 0x33, 0x63, 0x73, 0x73, 0x57, 0x35, 0x42, 0x6f, 0x36, 0x63, 0x47, 0x71, 0x32, 0x31]; // "0JQ5DB6s3cssW5Bo6cGq21" 歌词模块模板 id
+	const ABOUT = [0x73, 0x70, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x3a, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x3a, 0x30, 0x4a, 0x51, 0x35, 0x44, 0x42, 0x36, 0x73, 0x33, 0x63, 0x73, 0x73, 0x57, 0x35, 0x42, 0x6f, 0x36, 0x63, 0x47, 0x71, 0x31, 0x4c]; // "0JQ5DB6s3cssW5Bo6cGq1L" 关于艺人模板 id
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
 		do { x = b[i++]; n += (x & 0x7f) * 2 ** s; s += 7; } while (x & 0x80);
@@ -39,9 +39,10 @@
 			else if (wt === 5) i += 4;
 			else if (wt === 1) i += 8;
 			else return null;
+			if (i > to || !Number.isFinite(i)) return null; // 越界=body 被截断，放弃解析原样放行，避免输出非法 protobuf
 			out.push({ fn, wt, st, en: i });
 		}
-		return out;
+		return i === to ? out : null;
 	};
 	// 不再强制 no-store：制作人现改由 metadata(kind 186) 请求侧删除、不再依赖 scrollsita section，
 	// 残留隐患已消除。保留服务器原 cache-control(max-age=600)，让客户端缓存「已处理」的 scrollsita
@@ -52,6 +53,7 @@
 		const outer = walk(body, 0, body.length);
 		if (!outer) return $done($response);
 		let removed = 0;
+		let expectLyric = false; // 本次响应里本来是否存在歌词 section
 		const parts = [];
 		for (const f of outer) {
 			if (f.fn === 1 && f.wt === 2) {
@@ -69,6 +71,7 @@
 				// 选出要保留的 section：只保留歌词模块（精准 id 匹配 Gq21）。
 				// 无歌词的歌不保留任何 section（关于艺人 Gq1L 等一律删），播放页只剩封面。
 				const lyrics = secs.filter(x => x.lyric);
+				if (lyrics.length) expectLyric = true;
 				const keepSet = new Set(lyrics.map(x => x.s));
 				const kept = [];
 				for (const s of inner) {
@@ -88,7 +91,17 @@
 		let total = 0; for (const p of parts) total += p.length;
 		const res = new Uint8Array(total);
 		let off = 0; for (const p of parts) { res.set(p, off); off += p.length; }
+		// 安全阀：重建后必须仍含歌词 section，否则整包原样放行（宁可多一块面板，也不能把歌词模块弄丢）
+		if (expectLyric && count(res, 0, res.length, LYRIC) === 0) return $done($response);
 		$response.body = res;
+		// 关键修复：客户端对 scrollsita 有约 1000ms 超时闸门，超时就完全忽略本响应、改用内置默认卡片集
+		// （抓包实证 s898：走网络 8 次耗时 1104~2156ms 其中 5 次超时；缓存命中仅 50~60ms，从不超时）。
+		// 服务器原始 max-age=600 太短，10 分钟后又要赌一次网络。把「已处理好」的响应缓存期延到 24h，
+		// 让缓存命中成为常态 → 超时、以及随之而来的歌词模块不渲染大幅减少。
+		if ($response.headers) {
+			for (const k of Object.keys($response.headers)) if (/^cache-control$/i.test(k)) delete $response.headers[k];
+			$response.headers["Cache-Control"] = "private, max-age=86400";
+		}
 	} catch (e) {}
 	$done($response);
 })();
