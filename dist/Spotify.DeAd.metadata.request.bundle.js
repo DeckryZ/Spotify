@@ -24,7 +24,11 @@
 	// 本地短路开关：删完 kind 后若整个请求已无任何 extension 声明，服务器必定只回 200+空体
 	//（抓包 s898 实证 190/190）。此时直接本地合成同样的空响应，省掉一次 HTTPS 往返与 TLS 解密，
 	// 每 3 分钟会话约省 200 次射频往返。若怀疑它引起异常，改成 false 即可完全回退。
-	const SHORT_CIRCUIT = true;
+	// ⚠️ 2026-07-26 实测关闭：打开后「切换至视频」按钮死灰复燃。推断 Loon 不认 http-request 脚本里的
+	// response 键，且遇到不认识的键时会忽略整个 $done 对象（连同我们塞进去当保险的 headers/body），
+	// 于是转发了原始未删减的请求 → kind 99/136 照常返回 → 按钮回来。
+	// 结论：Loon 的 http-request 脚本不能用来合成响应。除非有真机验证的反证，不要再打开。
+	const SHORT_CIRCUIT = false;
 	const CL = /^content-length$/i; // hoist：避免在 header 循环里反复新建 RegExp
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
