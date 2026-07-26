@@ -4,13 +4,23 @@
 //   kind 114 = watchfeedextensions...EntityExplorerEntrypointResponse（artist/playlist 短视频/探索入口）
 //   kind 226 = ...WatchFeedSeedItemTrait（watchfeed 种子项，playlist 请求）
 //   kind 186 = CreditsTrait（播放页「制作人」卡；每首歌单独请求，不走 scrollsita section，删 section 无效，必须从这里删）
-//   kind 249 = ContentExperienceTrait（声明该曲有视频版体验 {f1:1}；只有有视频版的歌才带，决定播放页「切换至视频」按钮显示，删掉→客户端以为无视频版→不显示按钮）
+//   kind 99  = spotify.bumblebee.video_associations.v1.VideoAssociations（曲目↔音乐视频关联表）
+//              有 MV 的歌返回 200+约139字节（内含 MV 轨 URI），无 MV 的歌返回 404 空体。
+//              抓包统计(s883)：156 首被查询曲目中 26 首 200 / 130 首 404，与"哪些歌有 MV"一致。
+//              该 kind 常与 kind 10(Track) 打包请求，本脚本按 kind 逐条删，不影响 Track 元数据。
+//   kind 136 = spotify.playback_platform.transition.v1.TransitionMaps（音频↔视频配对表）
+//              ★ 这才是「切换至视频」按钮的真正来源：客户端用 uri=spotify:audio:<base62(original_audio.uuid)>
+//              查询它，响应返回配对的 video gid → 客户端存为 PlayerState.ProvidedTrack 的 associated_video_id
+//              → 有 avid 才显示按钮。抓包实证(s886)：Tears 的 136 响应返回 a0c1baaa25454aad994e445f655992f8，
+//              该 gid 一字不差出现在随后的 connect-state avid 里；而无按钮的 When Did You Get Hot? 既无 136
+//              请求也无 avid。kind 136 仅用于 spotify:audio: 实体且该 query 只含这一个 kind，删除零附带影响。
+//   kind 249 = ContentExperienceTrait（曾误判为按钮来源，实为样本标注错误所致；保留删除，无害）
 // 从每个 query 的 repeated extension 里删掉这些 kind 的声明项，服务器就不再返回它们。
 // 结构：top = f1(context) + repeated f2(query){ f1:uri, repeated f2:ext{ f1:varint(kind)[, f2:etag] } }。
 // 删 ext 后需重算所在 query 的长度前缀。未命中则原样放行。DeckryZ fork 自制。
 (() => {
 	"use strict";
-	const KINDS = new Set([114, 186, 226, 249]);
+	const KINDS = new Set([99, 114, 136, 186, 226, 249]);
 	const rv = (b, i) => {
 		let n = 0, s = 0, x;
 		do { x = b[i++]; n += (x & 0x7f) * 2 ** s; s += 7; } while (x & 0x80);
