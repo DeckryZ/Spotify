@@ -1,12 +1,12 @@
 #!name = 🍿️ DualSubs: 🎵 Spotify (DeckryZ fix)
-#!desc = Spotify 增强及双语歌词 | 更新: 2026-07-26 22:18
+#!desc = Spotify 增强及双语歌词 | 更新: 2026-07-26 22:31
 #!openUrl = http://boxjs.com/#/app/DualSubs.Spotify
 #!author = VirgilClyne[https://github.com/VirgilClyne]
 #!homepage = https://DualSubs.github.io/guide/spotify
 #!icon = https://github.com/DualSubs/Spotify/raw/main/src/assets/icon_rounded.png
 #!tag = 🍿️ DualSubs
 #!system = iOS,iPadOS,macOS
-#!date = 2026-07-26 22:18
+#!date = 2026-07-26 22:31
 
 [Argument]
 Types = input,"Translate,External",tag=[歌词] 启用类型（多选）,desc=请选择要添加的歌词选项，如果为多选，则会自动决定提供的歌词类型。
@@ -24,11 +24,13 @@ LogLevel = select,"WARN","OFF","ERROR","INFO","DEBUG","ALL",tag=[调试] 日志�
 ^https?:\/\/(.+-spclient|spclient\.wg)\.spotify\.com(:443)?\/ad-logic\/ reject-dict
 # 移除站内推广消息（搜索页赞助卡片等，pendragon 消息系统 trigger=spotify:find）
 ^https?:\/\/(.+-spclient|spclient\.wg)\.spotify\.com(:443)?\/pendragon\/ reject-dict
-# net-fortune：拦截码率/CDN 选路决策。⚠️ 注意：抓包 s898 实测 14/14 全是 content_type=music
-# （8 次 interactive_prefetch + 6 次 interactive，带 latency/stutter/bitrate 参数），并非广告 ——
-# 本规则系早期误判为广告端点而加。抓包里有约 0.6 秒的连发，疑为被拒后客户端重试。
-# 若出现卡顿、音质下降或码率偏低，第一个注释掉本行排查。
-^https?:\/\/(.+-spclient|spclient\.wg)\.spotify\.com(:443)?\/net-fortune\/ reject-dict
+# ⚠️ net-fortune 规则已于 2026-07-26 移除，不要再加回来。
+# 它不是广告端点：抓包 s883/s885/s886/s898 四份实测 14/14 全是 content_type=music，
+# 携带 bandwidth/latency/stutter/bitrate 参数，是**码率与 CDN 节点选路决策**。
+# 账户四份抓包均为 premium（无音频广告），拦它零收益。
+# 实测危害：带宽 66Mbps、延迟 253ms、stutter=0 的理想网络下 bitrate 仍只有 96000，
+# 且抓包可见约 0.6 秒的连发重试 —— 对应用户反馈的「切歌卡卡的」。
+# 当初加它是把 content_type=progressive-video 的猜测当成了事实，属误判。
 # 移除播放页「现场活动/演唱会」推广卡（抓包确认: liveeventdistribution EventCardInfoService 返回 concert 卡）
 ^https?:\/\/(.+-spclient|spclient\.wg)\.spotify\.com(:443)?\/spotify\.liveeventdistribution reject-dict
 # 移除播放页「周边商品」卡（抓包确认: merch-npv-service now-playing view 返回 merch/shop/product）
