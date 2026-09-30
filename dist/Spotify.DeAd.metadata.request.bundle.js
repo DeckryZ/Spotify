@@ -21,6 +21,12 @@
 (() => {
 	"use strict";
 	const KINDS = new Set([99, 114, 136, 186, 226, 249]);
+	// 🧪 测试（2026-09-30，Spotify 9.0.98）：专辑 query 的 kind 114 放行，不在请求侧删。
+	// 9.0.98 拿不到 114 时专辑页照样画空的 ♩ 短视频按钮（抓包 1183：6/6 专辑页都有 entity-explorer 曝光），
+	// 所以改为让服务器回答，再由 Spotify.DeAd.metadata.response.bundle.js 把专辑的 114 结果改写成 404「没有短视频」。
+	// 艺人/歌单的 114 照旧在请求侧删。测试失败时删掉这一行 + ALBUM_PASS 判断即可回退。
+	const ALBUM_PASS = new Set([114]);
+	const ALBUM = Array.from("spotify:album:", c => c.charCodeAt(0));
 	// 本地短路开关：删完 kind 后若整个请求已无任何 extension 声明，服务器必定只回 200+空体
 	//（抓包 s898 实证 190/190）。此时直接本地合成同样的空响应，省掉一次 HTTPS 往返与 TLS 解密，
 	// 每 3 分钟会话约省 200 次射频往返。若怀疑它引起异常，改成 false 即可完全回退。
@@ -95,12 +101,20 @@
 				let p = f.st; let tag; [tag, p] = rv(body, p); let ln; [ln, p] = rv(body, p);
 				const subs = walk(body, p, f.en);
 				if (!subs) { outParts.push(body.subarray(f.st, f.en)); keptExt++; continue; } // 解析不了就保守计数，禁止短路
-				let localRemoved = 0, qExt = 0;
+				let localRemoved = 0, qExt = 0, isAlbum = false;
+				for (const s of subs) {
+					if (s.fn === 1 && s.wt === 2) {
+						let q = s.st; [, q] = rv(body, q); [, q] = rv(body, q);
+						isAlbum = q + ALBUM.length <= s.en && ALBUM.every((c, i) => body[q + i] === c);
+						break;
+					}
+				}
 				const kept = [];
 				for (const s of subs) {
 					if (s.fn === 2 && s.wt === 2) {
 						qExt++;
-						if (KINDS.has(kindOf(body, s.st, s.en))) { localRemoved++; removed++; continue; }
+						const k = kindOf(body, s.st, s.en);
+						if (KINDS.has(k) && !(isAlbum && ALBUM_PASS.has(k))) { localRemoved++; removed++; continue; }
 					}
 					kept.push(body.subarray(s.st, s.en));
 				}
