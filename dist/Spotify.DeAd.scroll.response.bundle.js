@@ -1,6 +1,8 @@
 // Spotify 播放页精简 /scrollsita/v1/scroll 的 section，双模式（按固定模板 id 精准匹配，不用启发式）：
 //   有歌词模块（模板 id 0JQ5DB6s3cssW5Bo6cGq21）→ 只保留它（播放页只剩歌词）
-//   无歌词（该曲无歌词，不下发 Gq21）→ 不保留任何 section，播放页只剩封面
+//   无歌词（该曲无官方歌词，不下发 Gq21）→ 合成一个 Gq21 歌词卡片顶上（客户端只有见到这张卡片才会请求歌词，
+//     External 脚本才有机会注入网易云/LRCLIB 歌词）；若 External 已确认该曲外部也没有歌词（纯音乐等），
+//     则不保留任何 section，播放页只剩封面
 // 删除对象：制作人（Gq1O）、相似艺人、推荐歌排（Gq2qd 等无 artist 但非歌词的新排）、探索（explore 族 0JQ5DABRtFWApcy 前缀）等。
 // 早期版本用「无 artist」启发式判歌词，会误留新出现的推荐/内容排（Gq2qd/Gq1N），改为精准 id 匹配。字节级操作，解析失败或无可删则原样放行。DeckryZ fork 自制。
 (() => {
@@ -10,6 +12,15 @@
 		let n = 0, s = 0, x;
 		do { x = b[i++]; n += (x & 0x7f) * 2 ** s; s += 7; } while (x & 0x80);
 		return [n, i];
+	};
+	const enc = s => Array.from(unescape(encodeURIComponent(s)), c => c.charCodeAt(0));
+	// 合成歌词卡片 section，结构照抄服务器下发的 Gq21：{5:{1:"spotify:track:<id>"}, 23:{1:"spotify:section:…Gq21"}}
+	const lyricSection = tid => {
+		const uri = enc(`spotify:track:${tid}`);
+		const f5 = [0x0a, ...wv(uri.length), ...uri];
+		const f23 = [0x0a, ...wv(LYRIC.length), ...LYRIC];
+		const sec = [0x2a, ...wv(f5.length), ...f5, 0xba, 0x01, ...wv(f23.length), ...f23];
+		return new Uint8Array([0x0a, ...wv(sec.length), ...sec]);
 	};
 	const wv = n => {
 		const o = [];
@@ -47,6 +58,11 @@
 	try {
 		const body = $response.body;
 		if (!body || !body.length) return $done($response);
+		const tid = (/spotify:track:([0-9A-Za-z]{22})/.exec($request.url) || [])[1];
+		// External 脚本写入：1=外部有歌词，0=外部确认没有，undefined=还没查过
+		let avail;
+		try { avail = tid && JSON.parse($persistentStore.read("DualSubs.Spotify.ExtLyrics") || "{}")[tid]; } catch (e) {}
+		let injected = false;
 		const outer = walk(body, 0, body.length);
 		if (!outer) return $done($response);
 		let removed = 0;
@@ -68,6 +84,7 @@
 				// 无歌词的歌不保留任何 section（关于艺人 Gq1L 等一律删），播放页只剩封面。
 				const lyrics = secs.filter(x => x.lyric);
 				if (lyrics.length) expectLyric = true;
+				const inject = !lyrics.length && tid && avail !== 0;
 				const keepSet = new Set(lyrics.map(x => x.s));
 				const kept = [];
 				for (const s of inner) {
@@ -75,7 +92,8 @@
 					if (isSec && !keepSet.has(s)) { removed++; continue; }
 					kept.push(body.subarray(s.st, s.en));
 				}
-				if (removed === 0) { parts.push(body.subarray(f.st, f.en)); continue; }
+				if (inject) { kept.unshift(lyricSection(tid)); injected = true; }
+				if (removed === 0 && !inject) { parts.push(body.subarray(f.st, f.en)); continue; }
 				let len = 0; for (const k of kept) len += k.length;
 				parts.push(new Uint8Array([(1 << 3) | 2, ...wv(len)]));
 				for (const k of kept) parts.push(k);
@@ -83,7 +101,7 @@
 				parts.push(body.subarray(f.st, f.en));
 			}
 		}
-		if (removed === 0) return $done($response);
+		if (removed === 0 && !injected) return $done($response);
 		let total = 0; for (const p of parts) total += p.length;
 		const res = new Uint8Array(total);
 		let off = 0; for (const p of parts) { res.set(p, off); off += p.length; }
@@ -94,9 +112,11 @@
 		// （抓包实证 s898：走网络 8 次耗时 1104~2156ms 其中 5 次超时；缓存命中仅 50~60ms，从不超时）。
 		// 服务器原始 max-age=600 太短，10 分钟后又要赌一次网络。把「已处理好」的响应缓存期延到 24h，
 		// 让缓存命中成为常态 → 超时、以及随之而来的歌词模块不渲染大幅减少。
+		// 例外：还没查过外部歌词就先塞的卡片，只缓存 10 分钟。若查完发现是纯音乐（avail=0），
+		// 10 分钟后重拉即恢复只剩封面，不会让空卡片在客户端缓存里挂一整天。
 		if ($response.headers) {
 			for (const k of Object.keys($response.headers)) if (/^cache-control$/i.test(k)) delete $response.headers[k];
-			$response.headers["Cache-Control"] = "private, max-age=86400";
+			$response.headers["Cache-Control"] = injected && avail !== 1 ? "private, max-age=600" : "private, max-age=86400";
 		}
 	} catch (e) {}
 	$done($response);
